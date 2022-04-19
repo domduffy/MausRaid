@@ -5,15 +5,25 @@ using UnityEngine.InputSystem;
 
 public class PlayerMovement : MonoBehaviour
 {
+    PlayerControls playerControls;
+    Animator animator;
+
+    //Player Control Bools & Vectors
+    private bool isMovePressed, isAimPressed, gunEquip, isFirePressed, isMeleePressed;
+    private Vector2 currentMoveInput, currentLookInput, currentGunAimInput;
+
+    int isWalkingHash, isAimingHash, gunEquipHash;
+
     public Rigidbody myBody;
     public Transform cam;
     public CapsuleCollider myCollider;
+
     private float colHeight;
     private float colRadius;
 
     public float playerSpeed = 300f;
-    private float horizontal;
-    private float vertical;
+    public float gravitySpeed = 10f;
+    
     private Vector3 direction, moveDir;
     private float targetAngle;
     private float turnSmoothTime = 0.1f;
@@ -44,6 +54,8 @@ public class PlayerMovement : MonoBehaviour
     public Transform aimNormalPosition;
     private float targetAimAngle;
 
+    
+
     // Start is called before the first frame update
     void Awake()
     {
@@ -52,67 +64,142 @@ public class PlayerMovement : MonoBehaviour
         colHeight = myCollider.height;
         colHeight = myCollider.radius;
         floorMask = LayerMask.GetMask("Ground");
+
+        playerControls = new PlayerControls();
+        animator = GetComponent<Animator>();
+
+        isWalkingHash = Animator.StringToHash("isWalking");
+        isAimingHash = Animator.StringToHash("isAiming");
+        gunEquipHash = Animator.StringToHash("gunEquip");
+
+        playerControls.Player.Move.started += onMovementInput;
+        playerControls.Player.Move.canceled += onMovementInput;
+        playerControls.Player.Move.performed += onMovementInput;
+        playerControls.Player.Look.started += onLookInput;
+        //playerControls.Player.Look.canceled += onLookInput;
+        playerControls.Player.Look.performed += onLookInput;
+        playerControls.Player.GunAimDirection.started += onGunAimInput;
+        playerControls.Player.GunAimDirection.canceled += onGunAimInput;
+        playerControls.Player.GunAimDirection.performed += onGunAimInput;
+        playerControls.Player.Fire.started += onFire;
+        playerControls.Player.Fire.canceled += onFire;
+        playerControls.Player.Aim.started += onAim;
+        playerControls.Player.Aim.canceled += onAim;
+        playerControls.Player.Melee.started += onMelee;
+        playerControls.Player.Melee.canceled += onMelee;
     }
 
     // Update is called once per frame
     void Update()
     {
-
-        PlayerInput();
-        PlayerAimInput();
-        PlayerAim();
-        //PlayerAimRay();
+        handleAnimation();
         CheckGrounded();
-
-        //PlayerAimGun(aimDirection);
-
-        if (direction.magnitude >= 0.1f) // will help for deadzones on joysticks
-        {
-            targetAngle = Mathf.Atan2(direction.x, direction.z) * Mathf.Rad2Deg + cam.eulerAngles.y; // gives the radians in degrees between where the player is facing and the direction we are moving
-            
-            moveDir = Quaternion.Euler(0f, targetAngle,0f) * Vector3.forward;
-
-
-            Quaternion playerMoveRot = Quaternion.LookRotation(moveDir, isGroundNormal);
-            // Vector3 slopeDirection = Vector3.up - groundNormal * Vector3.Dot(Vector3.up, groundNormal);
-            // moveDirection = playerMoveRot * moveDir;
-            moveDirection = Vector3.ProjectOnPlane(moveDir, isGroundNormal);
-            Debug.DrawRay(transform.position, moveDirection * maxShootDistance, Color.red);
-
-
-
-        }
-        
+        PlayerDirection();
         PlayerRotate();
-        
     }
     private void FixedUpdate()
     {
-        if (direction.magnitude == 0 && isGrounded) { myBody.velocity = Vector3.zero; }
-        
-
-        //myBody.velocity = moveDir.normalized * direction.magnitude * playerSpeed * Time.deltaTime;
-
-        //myBody.velocity = moveDirection.normalized * direction.magnitude * playerSpeed * Time.deltaTime;
-
-        Vector3 temp = Vector3.Cross(groundNormal, direction);
-        Vector3 myDirection = Vector3.Cross(groundNormal, temp);
-        
-
-        myBody.velocity = moveDirection.normalized * direction.magnitude * playerSpeed * Time.deltaTime;
-
-        // myBody.velocity = Vector3.Cross(Vector3.Cross(groundNormal, transform.TransformDirection(new Vector3(direction.x, 0, direction.z))), groundNormal).normalized * direction.magnitude * playerSpeed * Time.deltaTime;
-
-
+        PlayerVelocity();
     }
 
+    void OnEnable()
+    {
+        playerControls.Player.Enable();
+    }
+    void OnDisable()
+    {
+        playerControls.Player.Disable();
+    }
+    void onMovementInput(InputAction.CallbackContext context)
+    {
+        currentMoveInput = context.ReadValue<Vector2>();
+        direction = new Vector3(currentMoveInput.x, 0, currentMoveInput.y);
+        isMovePressed = currentMoveInput.x != 0 || currentMoveInput.y != 0;
+    }
+    void onLookInput(InputAction.CallbackContext context)
+    {
+        currentLookInput = context.ReadValue<Vector2>();
+        mousePos = new Vector2(currentLookInput.x, currentLookInput.y);
+        var screenCenter = new Vector2(Screen.width / 2, Screen.height / 2);
+        aimDirection = screenCenter - mousePos;
+        aimDirection.Normalize();
+        Debug.Log(aimDirection);
+        PlayerAim(aimDirection);
+    }
+    void onAim(InputAction.CallbackContext context)
+    {
+        isAimPressed = context.ReadValueAsButton();
+    }
+    void onGunAimInput(InputAction.CallbackContext context)
+    {
+        currentGunAimInput = context.ReadValue<Vector2>();
+        // aimDirection = new Vector3(currentGunAimInput.x, 0, currentGunAimInput.y);
+        Debug.Log(currentGunAimInput);
+        isAimPressed = currentGunAimInput.x != 0 || currentGunAimInput.y != 0;
+        PlayerAim(-currentGunAimInput);
+        
+    }
+    void onMelee(InputAction.CallbackContext context)
+    {
+        isMeleePressed = context.ReadValueAsButton();
+    }
+    void onFire(InputAction.CallbackContext context)
+    {
+        isFirePressed = context.ReadValueAsButton();
+    }
+    void handleAnimation()
+    {
+        // get parameters from animator
+        bool isWalking = animator.GetBool(isWalkingHash);
+        bool isAiming = animator.GetBool(isAimingHash);
+
+        if (isMovePressed && !isWalking)
+        {
+            animator.SetBool(isWalkingHash, true);
+        } else if (!isMovePressed && isWalking)
+        {
+            animator.SetBool(isWalkingHash, false);
+        }
+        if (isAimPressed && !isAiming)
+        {
+            animator.Play("GunEquip");
+            animator.SetBool(isAimingHash, true);
+        }
+        else if (!isAimPressed && isAiming)
+        {
+            animator.SetBool(isAimingHash, false);
+        }
+    }
+    void PlayerDirection()
+    {
+        if (direction.magnitude >= 0.1f) // will help for deadzones on joysticks
+        {
+            targetAngle = Mathf.Atan2(direction.x, direction.z) * Mathf.Rad2Deg + cam.eulerAngles.y; // gives the radians in degrees between where the player is facing and the direction we are moving
+            moveDir = Quaternion.Euler(0f, targetAngle, 0f) * Vector3.forward;
+
+            moveDirection = Vector3.ProjectOnPlane(moveDir, isGroundNormal);
+            Debug.DrawRay(transform.position, moveDirection * maxShootDistance, Color.red);
+        }
+    }
+    void PlayerVelocity()
+    {
+        if (direction.magnitude == 0 && isGrounded) {
+            myBody.velocity = Vector3.zero;
+        }
+        else if (!isGrounded)
+        {
+            myBody.velocity = new Vector3(moveDir.x * direction.magnitude * playerSpeed, -gravitySpeed, moveDir.z * direction.magnitude * playerSpeed) * Time.deltaTime;
+        }
+        else
+        {
+            myBody.velocity = moveDirection.normalized * direction.magnitude * playerSpeed * Time.deltaTime;
+        }
+    }
     void PlayerRotate()
     {
         // if player is aiming, rotate the player towards the aim point
-        if (isAiming)
+        if (isAimPressed)
         {
-            // Create a quaternion (rotation) based on looking down the vector from the player to the mouse.
-            // var playerAimVector = new Vector3(-aimDirection.x, 0, -aimDirection.y);
             Quaternion newRotation = Quaternion.LookRotation(aimDir);
             // Set the player's rotation to this new rotation.
             myBody.MoveRotation(newRotation);
@@ -124,15 +211,9 @@ public class PlayerMovement : MonoBehaviour
         }
         // otherwise rotate the player to the movement direction vector
     }
-    void PlayerInput()
+    void PlayerAim(Vector2 playerAimDirection)
     {
-        horizontal = Input.GetAxisRaw("Horizontal");
-        vertical = Input.GetAxisRaw("Vertical");
-        direction = new Vector3(horizontal, 0, vertical).normalized;  
-    }
-    void PlayerAim()
-    {
-        targetAimAngle = Mathf.Atan2(-aimDirection.x, -aimDirection.y) * Mathf.Rad2Deg + cam.eulerAngles.y;
+        targetAimAngle = Mathf.Atan2(-playerAimDirection.x, -playerAimDirection.y) * Mathf.Rad2Deg + cam.eulerAngles.y;
         aimDir = Quaternion.Euler(0f, targetAimAngle, 0f) * Vector3.forward;
         rayDir = Quaternion.Euler(aimNormalPosition.transform.rotation.x, aimNormalPosition.transform.rotation.y, aimNormalPosition.transform.rotation.z) * aimDirection;
         //Debug.DrawRay(transform.position, rayDir * maxShootDistance, Color.red);
@@ -157,14 +238,14 @@ public class PlayerMovement : MonoBehaviour
     }
     void PlayerAimInput()
     {
-        mousePos = new Vector2(Input.mousePosition.x, Input.mousePosition.y);
+        //mousePos = new Vector2(Input.mousePosition.x, Input.mousePosition.y);
         var screenCenter = new Vector2(Screen.width/2, Screen.height/2);
         aimDirection = screenCenter - mousePos;
         aimDirection.Normalize();
     }
     void CheckGrounded()
     {
-        isGrounded = Physics.Raycast(groundCheckPosition.position, Vector3.down, 0.1f, groundLayer);
+        isGrounded = Physics.Raycast(groundCheckPosition.position, Vector3.down, 0.15f, groundLayer);
         RaycastHit hitNormalCheck;
         if (Physics.Raycast(groundCheckPosition.position, Vector3.down, out hitNormalCheck, 0.7f, groundLayer))
         {
@@ -174,7 +255,11 @@ public class PlayerMovement : MonoBehaviour
             rotCheckPosition.transform.rotation = Quaternion.FromToRotation(rotCheckPosition.transform.up, hitNormalCheck.normal) * rotCheckPosition.transform.rotation;
         }
     }
-/*    velocity = Vector3.Cross(Vector3.Cross(hitInfo.normal, transform.TransformDirection(Vector3(inputDirection.x, 0, inputDirection.y)), hitInfo.normal).normalized* targetSpeed;*/
+    /* void HandleGravity()
+    {
+        if (isGrounded) {return;}
+        // myBody.velocity = new Vector3(myBody.velocity.x, -gravitySpeed, myBody.velocity.z) * Time.deltaTime;
+    } */
     void PlayerAimGun(Vector3 shootDirection)
     {
         RaycastHit hit;
