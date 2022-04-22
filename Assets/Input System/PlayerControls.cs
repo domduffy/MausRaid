@@ -23,7 +23,7 @@ public class @PlayerControls : IInputActionCollection, IDisposable
                     ""type"": ""Value"",
                     ""id"": ""089a3bf9-7ee8-4938-87f1-704bd2df5b5c"",
                     ""expectedControlType"": ""Vector2"",
-                    ""processors"": ""NormalizeVector2"",
+                    ""processors"": """",
                     ""interactions"": """"
                 },
                 {
@@ -151,6 +151,14 @@ public class @PlayerControls : IInputActionCollection, IDisposable
                     ""type"": ""Button"",
                     ""id"": ""422e5d25-d4c3-4b9f-abc4-f05c24fca2f5"",
                     ""expectedControlType"": ""Button"",
+                    ""processors"": """",
+                    ""interactions"": """"
+                },
+                {
+                    ""name"": ""MoveLinear"",
+                    ""type"": ""Value"",
+                    ""id"": ""27ccced0-4983-47b0-a816-0b6834793c64"",
+                    ""expectedControlType"": ""Axis"",
                     ""processors"": """",
                     ""interactions"": """"
                 }
@@ -540,6 +548,17 @@ public class @PlayerControls : IInputActionCollection, IDisposable
                     ""action"": ""PauseMenu"",
                     ""isComposite"": false,
                     ""isPartOfComposite"": false
+                },
+                {
+                    ""name"": """",
+                    ""id"": ""b9781da8-ec72-436a-82a8-835fecfffe80"",
+                    ""path"": """",
+                    ""interactions"": """",
+                    ""processors"": """",
+                    ""groups"": ""Gamepad"",
+                    ""action"": ""MoveLinear"",
+                    ""isComposite"": false,
+                    ""isPartOfComposite"": false
                 }
             ]
         },
@@ -751,6 +770,7 @@ public class @PlayerControls : IInputActionCollection, IDisposable
         m_Player_Aim = m_Player.FindAction("Aim", throwIfNotFound: true);
         m_Player_GunAimDirection = m_Player.FindAction("GunAimDirection", throwIfNotFound: true);
         m_Player_PauseMenu = m_Player.FindAction("PauseMenu", throwIfNotFound: true);
+        m_Player_MoveLinear = m_Player.FindAction("MoveLinear", throwIfNotFound: true);
         // UI
         m_UI = asset.FindActionMap("UI", throwIfNotFound: true);
         m_UI_MenuDirection = m_UI.FindAction("MenuDirection", throwIfNotFound: true);
@@ -824,6 +844,7 @@ public class @PlayerControls : IInputActionCollection, IDisposable
     private readonly InputAction m_Player_Aim;
     private readonly InputAction m_Player_GunAimDirection;
     private readonly InputAction m_Player_PauseMenu;
+    private readonly InputAction m_Player_MoveLinear;
     public struct PlayerActions
     {
         private @PlayerControls m_Wrapper;
@@ -845,6 +866,7 @@ public class @PlayerControls : IInputActionCollection, IDisposable
         public InputAction @Aim => m_Wrapper.m_Player_Aim;
         public InputAction @GunAimDirection => m_Wrapper.m_Player_GunAimDirection;
         public InputAction @PauseMenu => m_Wrapper.m_Player_PauseMenu;
+        public InputAction @MoveLinear => m_Wrapper.m_Player_MoveLinear;
         public InputActionMap Get() { return m_Wrapper.m_Player; }
         public void Enable() { Get().Enable(); }
         public void Disable() { Get().Disable(); }
@@ -905,6 +927,9 @@ public class @PlayerControls : IInputActionCollection, IDisposable
                 @PauseMenu.started -= m_Wrapper.m_PlayerActionsCallbackInterface.OnPauseMenu;
                 @PauseMenu.performed -= m_Wrapper.m_PlayerActionsCallbackInterface.OnPauseMenu;
                 @PauseMenu.canceled -= m_Wrapper.m_PlayerActionsCallbackInterface.OnPauseMenu;
+                @MoveLinear.started -= m_Wrapper.m_PlayerActionsCallbackInterface.OnMoveLinear;
+                @MoveLinear.performed -= m_Wrapper.m_PlayerActionsCallbackInterface.OnMoveLinear;
+                @MoveLinear.canceled -= m_Wrapper.m_PlayerActionsCallbackInterface.OnMoveLinear;
             }
             m_Wrapper.m_PlayerActionsCallbackInterface = instance;
             if (instance != null)
@@ -960,6 +985,9 @@ public class @PlayerControls : IInputActionCollection, IDisposable
                 @PauseMenu.started += instance.OnPauseMenu;
                 @PauseMenu.performed += instance.OnPauseMenu;
                 @PauseMenu.canceled += instance.OnPauseMenu;
+                @MoveLinear.started += instance.OnMoveLinear;
+                @MoveLinear.performed += instance.OnMoveLinear;
+                @MoveLinear.canceled += instance.OnMoveLinear;
             }
         }
     }
@@ -1093,6 +1121,7 @@ public class @PlayerControls : IInputActionCollection, IDisposable
         void OnAim(InputAction.CallbackContext context);
         void OnGunAimDirection(InputAction.CallbackContext context);
         void OnPauseMenu(InputAction.CallbackContext context);
+        void OnMoveLinear(InputAction.CallbackContext context);
     }
     public interface IUIActions
     {

@@ -10,7 +10,7 @@
                     "type": "Value",
                     "id": "089a3bf9-7ee8-4938-87f1-704bd2df5b5c",
                     "expectedControlType": "Vector2",
-                    "processors": "NormalizeVector2",
+                    "processors": "",
                     "interactions": ""
                 },
                 {
@@ -138,6 +138,14 @@
                     "type": "Button",
                     "id": "422e5d25-d4c3-4b9f-abc4-f05c24fca2f5",
                     "expectedControlType": "Button",
+                    "processors": "",
+                    "interactions": ""
+                },
+                {
+                    "name": "MoveLinear",
+                    "type": "Value",
+                    "id": "27ccced0-4983-47b0-a816-0b6834793c64",
+                    "expectedControlType": "Axis",
                     "processors": "",
                     "interactions": ""
                 }
@@ -525,6 +533,17 @@
                     "processors": "",
                     "groups": "Keyboard&Mouse",
                     "action": "PauseMenu",
+                    "isComposite": false,
+                    "isPartOfComposite": false
+                },
+                {
+                    "name": "",
+                    "id": "b9781da8-ec72-436a-82a8-835fecfffe80",
+                    "path": "",
+                    "interactions": "",
+                    "processors": "",
+                    "groups": "Gamepad",
+                    "action": "MoveLinear",
                     "isComposite": false,
                     "isPartOfComposite": false
                 }
