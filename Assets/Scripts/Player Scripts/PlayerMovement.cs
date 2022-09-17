@@ -5,6 +5,13 @@ using UnityEngine.InputSystem;
 
 public class PlayerMovement : MonoBehaviour
 {
+    // Player Components
+    public Rigidbody myBody;
+    public Transform cam;
+    public CapsuleCollider myCollider;
+    private float colHeight;
+    private float colRadius;
+
     PlayerControls playerControls;
     Animator animator;
     [Header("Equippable Locations")]
@@ -12,39 +19,42 @@ public class PlayerMovement : MonoBehaviour
 
     //Player Control Bools & Vectors
     private bool isMovePressed, isAimPressed, gunEquip, isFirePressed, isMeleePressed, isDodgeRollPressed, isSteamPressed;
+    // get parameters from animator
+    private bool isWalking, isAiming, isSteamDashing;
     private Vector2 currentMoveInput, latestMoveInput, currentLookInput, currentGunAimInput;
 
     //Animator Bools
     int isWalkingHash, isAimingHash, gunEquipHash, isSteamDashingHash, dodgeRollHash, steamDashEnterHash, steamDashHash, steamDashExitHash;
 
     // Player states as enums
-    public enum PlayerState { isAnimating, isRolling, isHurt, isDead, isAiming, isAttacking, isOnCover, isSneaking, isIdle, isFalling, isSteamDashing }
-
+    public enum PlayerState { isAnimating, isRolling, isHurt, isDead, isAiming, isAttacking, isOnCover, isSneaking, isIdle, isFalling, isSteamDashing, isMoving }
     public PlayerState currentState;
 
-    public Rigidbody myBody;
-    public Transform cam;
-    public CapsuleCollider myCollider;
-
-    private float colHeight;
-    private float colRadius;
-
+    // Physics & base movement speed
     public float playerSpeed = 300f;
     public float gravitySpeed = 10f;
 
-    [SerializeField]
-    private Vector3 direction, moveDir;
+    // Movement Directions & Rotation
+    [SerializeField] private Vector3 direction, moveDir;
     public float movementMultiplier;
     private float targetAngle;
-    private float turnSmoothTime = 0.1f;
+    private float turnSmoothTime;
     float turnSmoothVelocity;
+    private float currentToTargetDifference;
+    [SerializeField] private bool doRotate;
+    [SerializeField] private bool isRotated;
 
+    // Aiming Direction
+    [SerializeField] private bool canAim;
     public Vector3 aimDirection;
-    public bool isAiming;
     private float camRayLength = 100f;
     private int floorMask;
     private Vector3 playerToMouse;
+    public float aimMovementSpeed; // this can be switched out to weapon's var
+    public float aimRotationSpeed; // this can be switched out to weapon's var
+    public float aimRotation;
 
+    // Grounded checks
     public bool isGrounded;
     public Transform groundCheckPosition;
     public Transform rotCheckPosition;
@@ -52,6 +62,7 @@ public class PlayerMovement : MonoBehaviour
     public Vector3 groundNormal;
     public Vector3 isGroundNormal;
 
+    // Wall Cover System
     private LayerMask wallCoverLayer;
     public bool isOnWall;
     private Vector3 wallNormal;
@@ -64,11 +75,12 @@ public class PlayerMovement : MonoBehaviour
     public Transform aimNormalPosition;
     private float targetAimAngle;
 
-    // Add in Dodge Roll
+    // Dodge Roll System
     public float dodgeRollTimer = 10f;
     public bool canRoll;
     private Vector3 dodgeRollDirection;
-    // Add steam dash
+
+    // Steam Dash System
     private float steamDashTimer = 10f;
     private float steamTimeCounter;
     private float steamInvincibility = 2f;
@@ -79,11 +91,12 @@ public class PlayerMovement : MonoBehaviour
     private float steamReplen;
     private Vector3 steamDashDirection;
     private Vector3 lastSteamDashDirection;
-    [SerializeField]
-    private float steamTank;
+    [SerializeField] private float steamTank;
     private float steamTankMax;
     private float steamTankMin;
     public bool steamDashEnded;
+
+
     // Add shooting
     // Add hurt
     public bool isInvincible;
@@ -95,26 +108,43 @@ public class PlayerMovement : MonoBehaviour
     public bool canMelee;
     // Add cover system & movement
 
+    // State Manager needs to have EnterState, UpdateState and ExitState phases
+    // EnterState will set the global variables
+    // Check State checks which state is currently running
+    // UpdateState runs the update logic
+    // ExitState listens for inputs or callbacks to switch the state, and allows/blocks changes from happening
+    // ChangeState will be the function that runs the state to switch
+
     // Start is called before the first frame update
     void Awake()
     {
+        // Cache components
+        playerControls = new PlayerControls();
+        animator = GetComponent<Animator>();
+
         myBody = GetComponent<Rigidbody>();
         myCollider = GetComponent<CapsuleCollider>();
         colHeight = myCollider.height;
         colHeight = myCollider.radius;
         floorMask = LayerMask.GetMask("Ground");
+        // End Cache components
 
-        playerControls = new PlayerControls();
-        animator = GetComponent<Animator>();
+        // Convert Animation variables to hash
 
         isWalkingHash = Animator.StringToHash("isWalking");
         isAimingHash = Animator.StringToHash("isAiming");
-        gunEquipHash = Animator.StringToHash("gunEquip");
+        gunEquipHash = Animator.StringToHash("GunEquip");
         dodgeRollHash = Animator.StringToHash("DodgeRoll");
         isSteamDashingHash = Animator.StringToHash("isSteamDashing");
         steamDashEnterHash = Animator.StringToHash("SteamDashEnter");
         steamDashExitHash = Animator.StringToHash("SteamDashExit");
         steamDashHash = Animator.StringToHash("SteamDashing");
+
+        
+
+        // End Convert Animation variables to hash
+
+        // Input System Events
 
         playerControls.Player.Move.started += onMovementInput;
         playerControls.Player.Move.canceled += onMovementInput;
@@ -136,16 +166,22 @@ public class PlayerMovement : MonoBehaviour
         playerControls.Player.Steam.started += onSteam;
         playerControls.Player.Steam.canceled += onSteam;
 
+        // End Input System Events
+
+        // Base state variables
         currentState = PlayerState.isIdle;
         isInvincible = false;
         canRoll = true;
         canSteamDash = true;
+
+        // Steam variables
 
         steamTank = 30f;
         steamTankMax = 30f;
         steamTankMin = 10f;
         steamReplen = 0.5f;
 
+        // Base invincibility Frames
         currentInvincibility = 0f;
     }
 
@@ -158,18 +194,21 @@ public class PlayerMovement : MonoBehaviour
     // Update is called once per frame
     void Update()
     {
-        handleAnimation();
+        HandleAnimation();
+        CheckCurrentState();
         HandleState();
         CheckGrounded();
         PlayerDirection();
-        PlayerRotate();
         CalculateSteam();
         InvincibilityFrames(currentInvincibility);
+        Debug.Log("The current state is" + currentState);
     }
     private void FixedUpdate()
     {
         HandleVelocity();
     }
+
+   // Input System Events
 
     void OnEnable()
     {
@@ -204,9 +243,7 @@ public class PlayerMovement : MonoBehaviour
     void onGunAimInput(InputAction.CallbackContext context)
     {
         currentGunAimInput = context.ReadValue<Vector2>();
-        isAimPressed = currentGunAimInput.x != 0 || currentGunAimInput.y != 0;
-        PlayerAim(-currentGunAimInput);
-        
+        isAimPressed = currentGunAimInput.x != 0 || currentGunAimInput.y != 0; 
     }
     void onMelee(InputAction.CallbackContext context)
     {
@@ -237,12 +274,29 @@ public class PlayerMovement : MonoBehaviour
     {
         isSteamPressed = context.ReadValueAsButton();
     }
-    void handleAnimation()
+
+    // End Input System Events
+
+    void AnimationUpdate(bool animatorBool, int animatorHash, bool buttonPressed)
+    {
+        animatorBool = animator.GetBool(animatorHash);
+        if (buttonPressed && !animatorBool)
+        {
+            animator.SetBool(animatorHash, true);
+        }
+        else if (!buttonPressed && animatorBool)
+        {
+            animator.SetBool(animatorHash, false);
+        }
+    }
+    void HandleAnimation()
     {
         // get parameters from animator
-        bool isWalking = animator.GetBool(isWalkingHash);
-        bool isAiming = animator.GetBool(isAimingHash);
-        bool isSteamDashing = animator.GetBool(isSteamDashingHash);
+        isWalking = animator.GetBool(isWalkingHash);
+        isAiming = animator.GetBool(isAimingHash);
+        isSteamDashing = animator.GetBool(isSteamDashingHash);
+
+        // Walking Animation
 
         if (isMovePressed && !isWalking)
         {
@@ -251,6 +305,7 @@ public class PlayerMovement : MonoBehaviour
         {
             animator.SetBool(isWalkingHash, false);
         }
+        // Aiming Animation
         if (isAimPressed && !isAiming)
         {
             animator.Play(gunEquipHash);
@@ -260,6 +315,8 @@ public class PlayerMovement : MonoBehaviour
         {
             animator.SetBool(isAimingHash, false);
         }
+        // Steam Dash Animation
+
         if (isSteamPressed && !isSteamDashing)
         {
             animator.Play(steamDashEnterHash);
@@ -276,22 +333,39 @@ public class PlayerMovement : MonoBehaviour
         {
             
             targetAngle = Mathf.Atan2(direction.x, direction.z) * Mathf.Rad2Deg + cam.eulerAngles.y; // gives the radians in degrees between where the player is facing and the direction we are moving
-            moveDir = Quaternion.Euler(0f, targetAngle, 0f) * Vector3.forward;
+            moveDir = Quaternion.Euler(0f, targetAngle, 0f) * Vector3.forward; // converts the target angle of movement to a Vector3
 
             moveDirection = Vector3.ProjectOnPlane(moveDir, isGroundNormal).normalized;
             Debug.DrawRay(transform.position, moveDirection * maxShootDistance, Color.red);
         }
     }
-    void UpdatePlayerState(PlayerState newstate)
+    void ChangePlayerState(PlayerState newState, bool canChangeState)
     {
-        if (newstate == currentState) { return; }
+        if (!canChangeState) return;
+        if (newState == currentState) { return; }
         PlayerState prevState = currentState;
-        currentState = newstate;
+        currentState = newState;
+
+    } // Function to call changing the player state, and set the base variables
+    void CheckCurrentState() {
+        switch (currentState)
+        {
+            case PlayerState.isIdle:
+                if (isDodgeRollPressed && canRoll) currentState = PlayerState.isSteamDashing;
+                if (isAimPressed && canAim) currentState = PlayerState.isAiming;
+                break;
+            default:
+                currentState = PlayerState.isIdle;
+                break;
+        }
     }
-    void HandleState()
+    void HandleState() // handles the update loop for each state
     {
         switch (currentState)
         {
+            case PlayerState.isMoving:
+                PlayerMoveState();
+                break;
             case PlayerState.isRolling:
                 Debug.Log("Player Is Now Rolling");
                 movementMultiplier = 1.5f;
@@ -300,13 +374,24 @@ public class PlayerMovement : MonoBehaviour
             case PlayerState.isSteamDashing:
                 SteamDash();
                 break;
+            case PlayerState.isAiming:
+                PlayerAim(-currentGunAimInput);
+                PlayerRotate(targetAngle, 0.1f, 180f);
+                break;
             case PlayerState.isIdle:
+                canAim = true;
+                PlayerRotate(targetAngle, 0.1f, 180f);
                 // go to dodgeroll state
                 if (isDodgeRollPressed && canRoll) DodgeRoll();
                 // go to steamdash state
                 if (isSteamPressed && canSteamDash) SteamDash();
                 // go to melee state
                 if (isMeleePressed && canMelee) MeleeAttack();
+                // go to Aim state
+                if (isAimPressed && canAim) { 
+                    PlayerAim(-currentGunAimInput);
+                    PlayerRotate(aimRotation,0.1f, 180f);
+                }
                 movementMultiplier = currentMoveInput.magnitude;
                 break;
             default:
@@ -318,6 +403,8 @@ public class PlayerMovement : MonoBehaviour
     {
         switch (currentState)
         {
+            case PlayerState.isMoving:
+                break;
             case PlayerState.isRolling:
                 PlayerMove(dodgeRollDirection);
                 break;
@@ -372,35 +459,62 @@ public class PlayerMovement : MonoBehaviour
     {
         myBody.velocity = Vector3.zero;
     }
+    // Fall State
     void PlayerFall()
     {
         myBody.velocity = new Vector3(moveDir.x * movementMultiplier * playerSpeed, -gravitySpeed, moveDir.z * movementMultiplier * playerSpeed) * Time.deltaTime;
+        canAim = false;
+        canMelee = false;
+
     }
+
     void PlayerMove(Vector3 playerMoveDirection)
     {
         myBody.velocity = playerMoveDirection.normalized * movementMultiplier * playerSpeed * Time.deltaTime;
     }
-    void PlayerRotate()
+    void PlayerRotate(float _targetAngle, float _turnSmoothTime, float _maxTurnSpeed)
     {
+        float _currentRelativeAngle = Vector3.Angle(moveDirection, transform.forward); // The difference between the player's move direction & the players current forward facing
+        // Debug.Log(_currentRelativeAngle);
+
+        if (_currentRelativeAngle <= 0.5f) // check if the angle is the same
+        {
+            isRotated = true;
+            return;
+        } else if (_currentRelativeAngle > 10f) {
+            isRotated = false;
+        }
+
+        if (!isRotated) // check if the angle is over a certain limit
+        {
+            float angle = Mathf.SmoothDampAngle(transform.eulerAngles.y, _targetAngle, ref turnSmoothVelocity, _turnSmoothTime, _maxTurnSpeed); // great way to smooth rotations and angles in Unity
+            transform.rotation = Quaternion.Euler(0f, angle, 0f);
+        }
+
         // if player is aiming, rotate the player towards the aim point
-        if (isAimPressed)
+        /*if (isAimPressed)
         {
             Quaternion newRotation = Quaternion.LookRotation(aimDir);
             // Set the player's rotation to this new rotation.
             myBody.MoveRotation(newRotation);
-        }
-        else
-        {
-            float angle = Mathf.SmoothDampAngle(transform.eulerAngles.y, targetAngle, ref turnSmoothVelocity, turnSmoothTime); // great way to smooth rotations and angles in Unity
-            transform.rotation = Quaternion.Euler(0f, angle, 0f);
-        }
+        }*/
+
+        
+
         // otherwise rotate the player to the movement direction vector
     }
+
+    // Aim State
     void PlayerAim(Vector2 playerAimDirection)
     {
+        currentState = PlayerState.isAiming;
+
         targetAimAngle = Mathf.Atan2(-playerAimDirection.x, -playerAimDirection.y) * Mathf.Rad2Deg + cam.eulerAngles.y;
         aimDir = Quaternion.Euler(0f, targetAimAngle, 0f) * Vector3.forward;
         rayDir = Quaternion.Euler(aimNormalPosition.transform.rotation.x, aimNormalPosition.transform.rotation.y, aimNormalPosition.transform.rotation.z) * aimDirection;
+
+        // aimRotation = Quaternion.LookRotation(aimDir);
+        aimRotation = Mathf.Atan2(-aimDir.x, -aimDir.y) * Mathf.Rad2Deg + cam.eulerAngles.y;
         //Debug.DrawRay(transform.position, rayDir * maxShootDistance, Color.red);
         Debug.DrawRay(aimNormalPosition.transform.position, aimNormalPosition.transform.forward * maxShootDistance, Color.blue);
     }
@@ -502,5 +616,19 @@ public class PlayerMovement : MonoBehaviour
         canRoll = false;
         yield return new WaitForSeconds(waitTime);
         if (currentState == PlayerState.isRolling) canRoll = true;
+    }
+
+    void PlayerIdleState()
+    {
+
+    }
+    void PlayerMoveState()
+    {
+        PlayerMove(moveDirection);
+    }
+    void PlayerMoveUpdate()
+    {
+        
+
     }
 }
